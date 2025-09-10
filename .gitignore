@@ -1,0 +1,32 @@
+# Reports (generated content)
+reports/daily/*
+reports/executive/*
+reports/monthly/*
+
+# Keep directory structure but ignore contents
+!reports/daily/.gitkeep
+!reports/executive/.gitkeep
+!reports/monthly/.gitkeep
+
+# Configuration files (may contain sensitive data)
+config/*.conf
+config/*.json
+config/*.yaml
+config/*.yml
+config/secrets*
+config/credentials*
+
+# Keep example config
+!config/*.example.*
+!config/README.md
+
+# System files
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.env
+
+# Backup files
+*.bak
+*~
