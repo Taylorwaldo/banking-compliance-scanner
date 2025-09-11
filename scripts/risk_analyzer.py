@@ -194,3 +194,155 @@ REMEDIATION_COSTS = {
     "vpc": {"CRITICAL": 6000, "HIGH": 3500, "MEDIUM": 1800, "LOW": 700},
     "default": {"CRITICAL": 5000, "HIGH": 3000, "MEDIUM": 1500, "LOW": 600},
 }
+
+# annual_revenue is the companys total yr revenue (default $50 mil)
+# self.annual_revenue stores it so the other methods can use it in the calculations
+# This below is the constructor for the class...
+def __init__(self, annual_revenue: float = 50000000):
+    """Initialize with company's annual revenue for impact calculations"""
+    self.annual_revenue = annual_revenue
+
+
+#---------------------------------------------------------------------------------------------------
+# Purpose : Estimate the financial impact of the PCI-DSS violation based on severity.
+# Converts -severity- to uppercase for consistency like for ex. "high" become "HIGH"
+# Looks up the PCO_FINES dictionary to get:
+#   Min fine
+#   Max fine
+#   Likely fine
+# Returns a tuple (min, max, likely). Remember a tuple is immutable ie the values can't be changed
+# If the severity isn't in the dictionary, it returns (0, 0, 0)
+#---------------------------------------------------------------------------------------------------
+def calculate_pci_impact(self, severity: str) -> Tuple[float, float, float]: # note2self severity: -> severity must be a string.
+    """Calculate PCI-DSS financial impact ranges"""                             # -> Tuple[float, float, float] -> the function returns a tuple of three floats (min, max, likely)
+    severity_upper = severity.upper()
+    if severity_upper in self.PCI_FINES:
+        fine_data = self.PCI_FINES[severity_upper]
+        return fine_data["min"], fine_data["max"], fine_data["likely"]
+    return 0,0,0
+
+
+# Purpose: Estimate financial impact for SOC 2 compliance issues like customer churn or lost contracts
+def calculate_soc2_impact(self, severity: str) -> Tuple[float, float, float]:
+    """Calculate SOC2 business impact in financial terms"""
+
+    # Convert severity to uppercase
+    # Look up SOC2_IMPACT dict for that severity
+    # ???
+    # Profit... sike compute revenue loss...
+    severity_upper = severity.upper()
+    if severity_upper in self.SOC_IMPACT:
+        impact_data = self.SOC2_IMPACT[severity_upper]
+
+        # computing revenue loss...
+        churn_impact = self.annual_revenue * impact_data["customer_churn_risk"] # estimated revenue lost if customers leave
+        contract_impact = self.annual_revenue * impact_data["contract_value_risk"] # partial revenue lost from contract risks (scaled by 20%).
+
+        # Compute min, max, & likely impacts:
+        min_impact = min(churn_impact, contract_impact) * 0.5 # conservative lower bound
+        max_impact = churn_impact + contract_impact # worst- case scenario
+        likely_impact = (min_impact +max_impact) / 2
+
+        return min_impact, max_impact, likely_impact
+    return 0, 0, 0 # if severity not found
+
+
+# Purpose: Estimate the cost to fix a finding, depending on cloud service & risk severity
+def calculate_remediation_cost(self, service: str, severity: str):
+    """See purpose above"""
+    # Covert service name to lowercase & severity to uppercase
+    service_lower = service.lower()
+    severity_upper = severity.upper()
+
+    #Returns the remediation cost from the matrix
+    # If the service/severity isnt found, default to $1k
+    cost_matrix = self.REMEDIATION_COSTS.get(service_lower, self.REMEDIATION_COSTS["default"])
+    return cost_matrix.get(severity_upper, 1000)
+
+    # Example: calculate_remediation_cost("s3". "CRITICAL") -> returns $5k
+
+#---------------------------------------------------------------------------------------------------
+# Purpose: Calculates return on investment aka R.O.I. of performing remediation.
+# The formula :
+#               financial impact avoided - remediation costs
+#       ROI  =  ----------------------------------------
+#                       remediation cost
+# If the remediation cost is ZERO ... returns 0 to avoid division errors.
+# Uses -round(...,2) to keep the result
+# Example -> calculate_roi(75000, 5000) #  (75000-500)/5000 = 14.0
+#       |> ROI of 14 meas $14 of impact avoided for every $1 spent fixing it.
+#---------------------------------------------------------------------------------------------------
+def calculate_roi(self, financial_impact: float, remediation_cost: float) -> float: # reminder 2 self -> is a type hint for the return value of a function, ie this function takes twi floats and will return a float
+    if remediation_cost == 0:                                                           # returnsa single float representing the ROI
+        return 0
+    return round((financial_impact - remediation_cost) / remediation_cost, 2)
+
+
+
+#---------------------------------------------------------------------------------------------------
+# Logic (For now... SUBJECT TO CHANGE!!!!!!
+#
+# 1. Takes a CSV scan output from Prowler
+# 2. Validates the file exists
+# 3. Reads each row into a Finding Object
+# 4. Filters only the failed findings
+# 5. Stores them in self.findings
+# 6. Logs success/failure for reporting
+#
+# Nutshell: it loads, parses, & filters scan results, preparing them for financial impact
+#           calculations in the risk quantification engine.
+#--------------------------------------------------------------------------------------------------
+class RiskQuantifier:
+    """Main risk quantification engine"""
+
+    def __init__(self, annual_revenue: float = 50000000):
+        self_calculator = FinancialImpactCalculator(annual_revenue) # create an instance of FinancialImpactCalculator to use 4 calculations
+        self.findings: List[Finding] = []                           # empty list that will store all failed findings
+        self.risk_metrics: Dict[str, RiskMetrics] = {}              # an empty dictionary that will store calculated risk metrics for each service or control
+
+    # Takes a path 2 a CVS file as input (cvs_file: str)
+    # Returns bool, indicating success (true) or faliure (false)
+    def load_scan_results(self, csv_file: str) -> bool:
+        """Parse Prowler CVS output"""
+        try:
+            csv_path = Path(csv_file) # converts string path into a Path obj from pathlib
+            if not csv_path.exists():
+                logger.error(f"CSV file is not found: {csv_file}") # writes error message to logger
+                return False
+
+            with open(csv_path, 'r', encoding='utf-8') as f: # opens the file safely (auto closes it after)
+                reader = csv.DictReader(f)                   # reads CSV rows as dictionaries, so each column can be accessed by its header name
+
+                # Loops over every row in the CSV
+                # Creates a Finding object with all the relevant fields.
+                # row.get('FIELD_NAME', default) = safely retrieves a column; if it doesnt exist, it uses a default value
+                for row in reader:
+                    finding = Finding(
+                        check_id=row.get('CHECK_ID', ''),
+                        status=row.get('STATUS', ''),
+                        severity=row.get('SEVERITY', 'MEDIUM'),
+                        service=row.get('SERVICE_NAME', 'unknown'),
+                        region=row.get('REGION', 'global'),
+                        account_id=row.get('ACCOUNT_ID', ''),
+                        description=row.get('DESCRIPTION', ''),
+                        remediation=row.get('REMEDIATION', ''),
+                        compliance_framework=row.get('COMPLIANCE', 'general'),
+                        control_id=row.get('CONTROL_ID', ''),
+                        resource_id=row.get('RESOURCE_ID', '')
+                    )
+
+                    if finding.is_failed:
+                        self.findings.append(finding)
+
+            logger.info(f"Loaded {len(self.findings)} failed findings from {csv_file}") #logs # of failed findings successfully loaded, returns true to indicate success                                                                         # re
+            return True
+
+        # Catches any exceptions during the file reading/parsing process
+        # Logs the error message s& returns False -> prevents the program from crashing
+        except Exception as e:
+            logger.error(f"Error loading CSv: {str(e)}")
+            return False
+
+# pick up l8r
+def
+
