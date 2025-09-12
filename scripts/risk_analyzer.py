@@ -343,6 +343,150 @@ class RiskQuantifier:
             logger.error(f"Error loading CSv: {str(e)}")
             return False
 
-# pick up l8r
-def
+
+    #Maps technical scan severity (HIGH,LOW) to a business-focused RiskLevel enum
+    #Default is MEDIUM if the severity is unrecognized
+    #Uses .upper() to make mapping case insensitive
+    # Example. finding.severity = "high"
+    #           finding.severity.upper() -> "HIGH"
+    #           severity_map.get("HIGH" -> RiskLevel.HIGH
+    def determine_finding_severity(self, finding: Finding) -> RiskLevel:
+        """Map Technical severity  to business risk lvl"""
+        severity_map = {                                        # Dictionary (mind you)
+            "CRITICAL": RiskLevel.CRITICAL,
+            "HIGH": RiskLevel.HIGH,
+            "MEDIUM": RiskLevel.MEDIUM,
+            "LOW": RiskLevel.LOW,
+            "INFORMATIONAL": RiskLevel.INFO
+        }
+        return severity_map.get(finding.severity.upper(), RiskLevel.MEDIUM)
+
+    """
+    Purpose:
+        Generate all the risk metrics for a single finding and produce aggregate
+        organizational risk reports.
+
+    Steps/Logic:
+        - Determine risk level using determine_finding_severity.
+        - Calculate financial impact based on compliance framework (PCI, SOC2, or default).
+        - Calculate remediation cost (calculator.calculate_remediation_cost).
+        - Calculate ROI (calculator.calculate_roi).
+        - Calculate risk score using _calculate_risk_score.
+        - Generate business impact narrative (_generate_business_impact).
+        - Assess customer impact (_assess_customer_impact).
+        - Estimate remediation time (_estimate_remediation_time).
+        - Returns a RiskMetrics object containing all above metrics.
+
+    Private Helper Methods:
+        _calculate_risk_score:
+            Converts enum + finding info into 0-100 risk score.
+            Adjusts for critical services and keywords in description.
+        _generate_business_impact:
+            Converts risk & service into a narrative statement for executives.
+        _assess_customer_impact:
+            Short summary of potential impact to customers based on severity.
+        _estimate_remediation_time:
+            Maps risk level to expected days to remediate.
+
+    Syntax Notes:
+        - "_" prefix → private/internal method convention in Python.
+        - Dictionary lookups often use .get() with defaults.
+
+    Aggregate Methods:
+        calculate_aggregate_risk:
+            Loops through all findings, calculates metrics, sums financial impact,
+            and produces overall organizational risk score.
+        _determine_overall_risk_level:
+            Converts overall score into textual risk levels (CRITICAL, HIGH, MODERATE…).
+        _identify_top_risks:
+            Returns the top N findings by financial impact.
+
+    ROI Prioritization:
+        prioritize_remediation_by_roi:
+            Sorts findings by ROI score to show quick wins first.
+            Returns a list of dictionaries with ROI info, remediation cost,
+            days to remediate, and business impact.
+
+    Executive Summary Generation:
+        generate_executive_summary:
+            Aggregates all metrics into a structured dictionary.
+            Includes:
+                - headline → attention-grabbing summary
+                - risk_posture → overall risk description
+                - financial_exposure → total exposure and ranges
+                - key_metrics → counts of findings by severity
+                - strategic_recommendations → actionable recommendations
+                - quick_wins → top high-ROI findings
+                - top_5_risks → largest financial exposures
+                - remediation_roadmap → phased remediation plan
+                - compliance_status → overall compliance posture
+
+        Helper Methods:
+            _generate_executive_headline, _generate_strategic_recommendations,
+            _generate_remediation_roadmap, _assess_compliance_status,
+            _recommend_audit_timing all support executive reporting.
+
+    Export Methods:
+        export_executive_report:
+            Saves summary as JSON.
+        export_markdown_report:
+            Saves summary as Markdown with tables, headings, and formatted financials.
+    """
+
+    def calculate_finding_metrics(self, finding: Finding) -> RiskMetrics:
+        """Calculate comprehensive risk metrics for a single finding"""
+
+    def _calculate_risk_score(self, risk_level: RiskLevel, finding: Finding) -> int:
+        """Calculate 0-100 risk score based on multiple factors"""
+
+    def _generate_business_impact(self, finding: Finding, risk_level: RiskLevel) -> str:
+        """Generate executive-friendly business impact statement"""
+
+    def _assess_customer_impact(self, finding: Finding, risk_level: RiskLevel) -> str:
+        """Assess potential customer impact"""
+
+    def _estimate_remediation_time(self, risk_level: RiskLevel): -> int:
+        """Estimate remediation time in days"""
+
+    def calculate_aggregate_risk(self) -> Dict:
+        """Calculate organization-wide risk metrics"""
+
+    def _determine_overall_risk_level(self, score: float) -> str:
+        """Determine overall organization risk level"""
+
+    def _identify_top_risks(self, count: int = 5) -> List[Dict]:
+        """Identify top risks by financial impact"""
+
+    def prioritize_remediation_by_roi(self) -> List[Dict]:
+        """Prioritize findings by ROI (return on investment)"""
+
+    def generate_executive_summary(self) -> Dict:
+        """Generate comprehensive executive summary"""
+
+    def _generate_executive_headline(self, aggregate: Dict) -> str:
+        """Generate attention-grabbing executive headline"""
+
+    def _generate_strategic_recommendations(self, aggregate: Dict, prioritized: List[Dict]) -> List[str]:
+        """Generate strategic recommendations for executives"""
+
+    def _generate_remediation_roadmap(self, prioritized: List[Dict]) -> Dict:
+        """Generate phased remediation roadmap"""
+
+    def _assess_compliance_status(self, aggregate: Dict) -> Dict:
+        """Assess overall compliance status"""
+
+    def _recommend_audit_timing(self, aggregate: Dict) -> str:
+        """Recommend when to schedule next audit"""
+
+    def export_executive_report(self, output_file: str):
+        """Export executive report as Markdown"""
+
+        # holy shit LOL
+
+def main():
+    """Main execution function, obviously"""
+
+if __name__ == "__main__":
+    main()
+
 
