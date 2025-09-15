@@ -435,15 +435,110 @@ class RiskQuantifier:
 
     def calculate_finding_metrics(self, finding: Finding) -> RiskMetrics:
         """Calculate comprehensive risk metrics for a single finding"""
+        risk_level = self.determine_finding_severity(finding)
+
+        # Calculate financial impact based on framework
+        if "pci" in finding.compliance_framework.lower():
+            min_impact, max_impact, likely_impact = self.calculator.calculate_pci_impact(finding.severity)
+            regulatory_exposure = "PCI-DSS non-compliance fines"
+        elif "soc" in finding.compliance_framework.lower():
+            min_impact, max_impact, likely_impact = self.calculator.calculate_soc2_impact(finding.severity)
+            regulatory_exposure = "SOC 2 attestation failure"
+        else:
+            min_impact, max_impact, likely_impact = self.calculator.calculate_pci_impact(finding.severity)
+            regulatory_exposure = "General compliance violation"
+
+        # Calculate remediation cost
+        remediation_cost = self.calculator.calculate_remediation_cost(finding.service, finding.severity)
+
+        # Calculate ROI
+        roi_score = self.calculator.calculate_roi(likely_impact, remediation_cost)
+
+        # Calculate risk score (0-100)
+        risk_score = self._calculate_risk_score(risk_level, finding)
+
+        # Determine business impact narrative
+        business_impact = self._generate_business_impact(finding, risk_level)
+
+        # Determine customer impact
+        customer_impact = self._assess_customer_impact(finding, risk_level)
+
+        # Estimate remediation time
+        time_to_remediate = self._estimate_remediation_time(risk_level)
+
+        # Return all metrics in structured object
+        return RiskMetrics(
+            risk_score=risk_score,
+            risk_level=risk_level,
+            financial_impact_min=min_impact,
+            financial_impact_max=max_impact,
+            financial_impact_likely=likely_impact,
+            remediation_cost=remediation_cost,
+            roi_score=roi_score,
+            business_impact=business_impact,
+            regulatory_exposure=regulatory_exposure,
+            customer_impact=customer_impact,
+            time_to_remediate_days=time_to_remediate
+        )
 
     def _calculate_risk_score(self, risk_level: RiskLevel, finding: Finding) -> int:
         """Calculate 0-100 risk score based on multiple factors"""
+        base_scores = {
+            RiskLevel.CRITICAL: 90,
+            RiskLevel.HIGH: 70,
+            RiskLevel.MEDIUM: 50,
+            RiskLevel.LOW: 30,
+            RiskLevel.INFO: 10,
+        }
+
+        score = base_scores.get(risk_level, 50)
+
+        # Adjust based on service criticality
+        critical_services = ["rds", "s3", "iam", "kms"]
+        if finding.service.lower() in critical_services:
+            score += 10
+
+        # Adjust based on data exposure risk
+        if any(keyword in finding.description.lower()
+               for keyword in ["encryption", "public", "exposed", "unencrypted", "credential"]):
+            score += 15
+
+        return min(100, score)
 
     def _generate_business_impact(self, finding: Finding, risk_level: RiskLevel) -> str:
         """Generate executive-friendly business impact statement"""
+        service_impacts = {
+            "s3": "data exposure and potential breach",
+            "ec3": "compute infrastructure compromise",
+            "rds": "database and customer data risk",
+            "iam": "identity and access control weakness",
+            "vpc": "network security boundary violation",
+            "kms": "encryption key management failure"
+        }
+
+        impact_templates = {
+            RiskLevel.CRITICAL: "CRITICAL: Immediate {} risk with potential for regulatory action and significant financial loss",
+            RiskLevel.HIGH: "HIGH: Significant {} requiring urgent remediation to avoid compliance penalties",
+            RiskLevel.MEDIUM: "MODERATE: {} that could escalate if not addressed within current quarter",
+            RiskLevel.LOW: "LOW: Minor {} requiring scheduled remediation",
+            RiskLevel.INFO: "INFORMATIONAL: Potential {} for review"
+        }
+
+        service_risk = service_impacts.get(finding.service.lower(), "security control gap")
+        template = impact_templates.get(risk_level, "Security issue identified")
+
+        return template.format(service_risk)
 
     def _assess_customer_impact(self, finding: Finding, risk_level: RiskLevel) -> str:
         """Assess potential customer impact"""
+        time_estimates = {
+            RiskLevel.CRITICAL: 1,
+            RiskLevel.HIGH: 3,
+            RiskLevel.MEDIUM: 7,
+            RiskLevel.LOW: 14,
+            RiskLevel.INFO: 30,
+        }
+        return time_estimates.get(risk_level, 7)
 
     def _estimate_remediation_time(self, risk_level: RiskLevel): -> int:
         """Estimate remediation time in days"""
