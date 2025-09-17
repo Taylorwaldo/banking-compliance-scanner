@@ -540,23 +540,148 @@ class RiskQuantifier:
         }
         return time_estimates.get(risk_level, 7)
 
-    def _estimate_remediation_time(self, risk_level: RiskLevel): -> int:
+    def _estimate_remediation_time(self, risk_level: RiskLevel) -> int:
         """Estimate remediation time in days"""
+        time_estimates = {
+            RiskLevel.CRITICAL: 1,
+            RiskLevel.HIGH: 3,
+            RiskLevel.MEDIUM: 7,
+            RiskLevel.LOW: 14,
+            RiskLevel.INFO: 30
+        }
+        return time_estimates.get(risk_level, 7)
 
     def calculate_aggregate_risk(self) -> Dict:
         """Calculate organization-wide risk metrics"""
+        # Handle empty case - ie there are no findings, return dictionary of zeroed-out metrics immediately.
+        if not self.findings:
+            return {
+                "total_findings": 0,
+                "overall_risk_score": 0,
+                "total_financial_exposure": {"min": 0, "max": 0, "likely":  0}
+            }
+        # Initialize Totals
+        total_min = 0
+        total_max = 0
+        total_likely = 0
+        risk_scores = []
+
+        # Initialize Severity Counter
+        findings_by_severity = {
+            "CRITICAL": 0,
+            "HIGH": 0,
+            "MEDIUM": 0,
+            "LOW": 0
+        }
+
+        for finding in self.findings:
+            metrics = self.calculate_finding_metrics(finding)
+            self.risk_metrics[finding.check_id] = metrics
+
+            # Adds up the financial impact estimate from each finding
+            # Collect risk scores into a list for later averaging
+            total_min += metrics.financial_impact_min
+            total_max += metrics.financial_impact_max
+            risk_scores.append(metrics.risk_score)
+
+            #Count findings by severity
+            # Increments the count of findings per severity
+            findings_by_severity[finding.severity.upper()] = \
+                findings_by_severity.get(finding.severity.upper(), 0) + 1   # .get() ensures it won't crash/KeyError
+
+            # Calculate weighted avg risk score
+            overall_risk_score = sum(risk_scores) / len(risk_scores) if risk_scores else 0
+
+            # Build the final dict summarizing all metrics
+            # round to format #s nicely
+            return {
+                "total_findings": len(self.findings),
+                "findings_by_severity": findings_by_severity,
+                "overall_risk_score": round(overall_risk_score, 1),
+                "total_financial_exposure": {
+                    "min": round(total_min, 2),
+                    "max": round(total_max, 2),
+                    "likely": round(total_likely, 2)
+                },
+                "risk_level": self._determine_overall_risk_level(overall_risk_score),
+                "top_risks": self._identify_top_risks(5)
+            }
+
 
     def _determine_overall_risk_level(self, score: float) -> str:
         """Determine overall organization risk level"""
+        if score >= 80:
+            return "CRITICAL - Immediate executive action required"
+        elif score >= 60:
+            return "HIGH - Significant compliance gaps requiring urgent attention"
+        elif score >= 40:
+            return "MODERATE - Multiple issues requiring planned remediation"
+        elif score >= 20:
+            return "LOW - Minor compliance gaps"
+        else:
+            return "MINIMAL - Strong compliance posture"
 
     def _identify_top_risks(self, count: int = 5) -> List[Dict]:
         """Identify top risks by financial impact"""
+        # Sort the findings
+        sorted_findings = sorted(
+            self.findings,
+            key=lambda f: self.risk_metrics.get(f.check_id, RiskMetrics(
+                0, RiskLevel.LOW, 0, 0, 0, 0, 0, "", "", "", 0
+            )).financial_impact_likely,
+            reverse=True
+        )[:count] # Slice to keep only the top count findings
+
+        # Build top_risks list
+        top_risks = []
+        for finding in sorted_findings:
+            metrics = self.risk_metrics.get(finding.check_id)
+            if metrics:
+                #Builds a dictionary
+                top_risks.append({
+                    "check_id": finding.check_id,                                       # the identifier
+                    "service": finding.service,                                         # the service affected
+                    "description": finding.description[:100] + "...",                   # trims log descriptions to 100 chars
+                    "financial_impact": f"${metrics.financial_impact_likely:,.0f}",     # formatted as USD
+                    "risk_score": metrics.risk_score,                                   # raw numeric risk score
+                    "remediation_cost": f"${metrics.remediation_cost:,.0f}",            # also format to USD
+                    "roi_score": metrics.roi_score                                      # return on investment score
+                })                                                                      # appends that dict to top_risks
+
+        return top_risks
 
     def prioritize_remediation_by_roi(self) -> List[Dict]:
         """Prioritize findings by ROI (return on investment)"""
+        roi_findings = []
+
+        for finding in self.findings:
+            metrics = self.risk_metrics.get(finding.check_id)
+            if metrics and metrics.roi_score > 0:
+                roi_findings.append({
+                    "check_id": finding.check_id,
+                    "service": finding.service,
+                    "severity": finding.severity,
+                    "description": finding.description[:150] + "...",
+                    "remediation": finding.remediation[:200] + "...",       # trims remediation plan to 200 char
+                    "roi_score": metrics.roi_score,
+                    "days_to_remediate": metrics.time_to_remediate_days,    # estimated time cost
+                    "business_impact": metrics.business_impact              # description of business consequences
+                })
+
+        # Sort by ROI score descending
+        # the reverse=Ture tells python (sort from largest to smallest instead of the norm smallest to largest)
+        roi_findings.sort(key=lambda x: x["roi_score"], reverse=True)
+
+        return roi_findings
 
     def generate_executive_summary(self) -> Dict:
         """Generate comprehensive executive summary"""
+        aggregate = self.calculate_aggregate_risk()
+
+        # Calculate remediation budget
+        total_remediation_cost = sum(
+            self.risk_metrics[f.check_id] # Pick up here
+        )
 
     def _generate_executive_headline(self, aggregate: Dict) -> str:
         """Generate attention-grabbing executive headline"""
