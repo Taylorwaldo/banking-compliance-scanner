@@ -361,77 +361,6 @@ class RiskQuantifier:
         }
         return severity_map.get(finding.severity.upper(), RiskLevel.MEDIUM)
 
-    """
-    Purpose:
-        Generate all the risk metrics for a single finding and produce aggregate
-        organizational risk reports.
-
-    Steps/Logic:
-        - Determine risk level using determine_finding_severity.
-        - Calculate financial impact based on compliance framework (PCI, SOC2, or default).
-        - Calculate remediation cost (calculator.calculate_remediation_cost).
-        - Calculate ROI (calculator.calculate_roi).
-        - Calculate risk score using _calculate_risk_score.
-        - Generate business impact narrative (_generate_business_impact).
-        - Assess customer impact (_assess_customer_impact).
-        - Estimate remediation time (_estimate_remediation_time).
-        - Returns a RiskMetrics object containing all above metrics.
-
-    Private Helper Methods:
-        _calculate_risk_score:
-            Converts enum + finding info into 0-100 risk score.
-            Adjusts for critical services and keywords in description.
-        _generate_business_impact:
-            Converts risk & service into a narrative statement for executives.
-        _assess_customer_impact:
-            Short summary of potential impact to customers based on severity.
-        _estimate_remediation_time:
-            Maps risk level to expected days to remediate.
-
-    Syntax Notes:
-        - "_" prefix → private/internal method convention in Python.
-        - Dictionary lookups often use .get() with defaults.
-
-    Aggregate Methods:
-        calculate_aggregate_risk:
-            Loops through all findings, calculates metrics, sums financial impact,
-            and produces overall organizational risk score.
-        _determine_overall_risk_level:
-            Converts overall score into textual risk levels (CRITICAL, HIGH, MODERATE…).
-        _identify_top_risks:
-            Returns the top N findings by financial impact.
-
-    ROI Prioritization:
-        prioritize_remediation_by_roi:
-            Sorts findings by ROI score to show quick wins first.
-            Returns a list of dictionaries with ROI info, remediation cost,
-            days to remediate, and business impact.
-
-    Executive Summary Generation:
-        generate_executive_summary:
-            Aggregates all metrics into a structured dictionary.
-            Includes:
-                - headline → attention-grabbing summary
-                - risk_posture → overall risk description
-                - financial_exposure → total exposure and ranges
-                - key_metrics → counts of findings by severity
-                - strategic_recommendations → actionable recommendations
-                - quick_wins → top high-ROI findings
-                - top_5_risks → largest financial exposures
-                - remediation_roadmap → phased remediation plan
-                - compliance_status → overall compliance posture
-
-        Helper Methods:
-            _generate_executive_headline, _generate_strategic_recommendations,
-            _generate_remediation_roadmap, _assess_compliance_status,
-            _recommend_audit_timing all support executive reporting.
-
-    Export Methods:
-        export_executive_report:
-            Saves summary as JSON.
-        export_markdown_report:
-            Saves summary as Markdown with tables, headings, and formatted financials.
-    """
 
     def calculate_finding_metrics(self, finding: Finding) -> RiskMetrics:
         """Calculate comprehensive risk metrics for a single finding"""
@@ -680,28 +609,224 @@ class RiskQuantifier:
 
         # Calculate remediation budget
         total_remediation_cost = sum(
-            self.risk_metrics[f.check_id] # Pick up here
+            self.risk_metrics[f.check_id].remediation_cost
+            for f in self.findings
+            if f.check_id in self.risk_metrics
         )
+
+        # Get prioritized remediations
+        prioritized = self.prioritize_remediation_by_roi()
+
+        # Quick wins (high ROI, low cost)
+        # Picks only remediations with a high ROI (>5) and a low cost (<5000).
+        quick_wins = [
+            r for r in prioritized
+            if r["roi_score"] > 5 and r["remediation_cost"] < 5000
+        ][:3]
+
+        # Return Summary Dictionary
+        return {
+            # current date/time in ISO 8601 format
+            "scan_date": datetime.now().isoformat(),
+            #Headline generated from risk data
+            "executive_briefing": {
+                "headline": self._generate_executive_headline(aggregate),
+                "risk_posture": aggregate["risk_level"],
+                # Financial Exposure
+                "financial_exposure": {
+                    "total_at_risk": f"${aggregate['total_financial_exposure']['likely']:,.0f}",
+                    "range": f"${aggregate['total_financial_exposure']['min']:,.0f} - ${aggregate['total_financial_exposure']['max']:,.0f}"
+                },
+                # shows the total remediation cost calculated earlier
+                "remediation_investment_required": f"${total_remediation_cost:,.0f}",
+                # "Overall_risk_score" out of 100
+                # .get("CRITICAL", 0) --> safe lookup
+                "key_metrics": {
+                    "overall_risk_score": f"{aggregate['overall_risk_score']}/100",
+                    "critical_findings": aggregate["findings_by_severity"].get("CRITICAL", 0),
+                    "high_findings": aggregate["findings_by_severity"].get("HIGH", 0),
+                    "total_findings": aggregate["total_findings"]
+                }
+            },
+            "strategic_recommendations": self._generate_strategic_recommendations(aggregate, prioritized),
+            "quick_wins": quick_wins,
+            "top_5_risks": aggregate["top_risks"],
+            "remediation_roadmap": self._generate_remediation_roadmap(prioritized),
+            "compliance_status": self._assess_compliance_status(aggregate)
+        }
+
 
     def _generate_executive_headline(self, aggregate: Dict) -> str:
         """Generate attention-grabbing executive headline"""
+        risk_score = aggregate["overall_risk_score"]
+        exposure = aggregate["total_financial_exposure"]["likely"]
+
+        if risk_score >= 80:
+            return f"🚨 CRITICAL ALERT: ${exposure:,.0f} at immediate risk - Board notification recommended"
+        elif risk_score >= 60:
+            return f"⚠️ HIGH RISK: ${exposure:,.0f} compliance exposure requires urgent action"
+        elif risk_score >= 40:
+            return f"📊 MODERATE RISK: ${exposure:,.0f} potential exposure - remediation plan needed"
+        else:
+            return f"✅ ACCEPTABLE RISK: Limited exposure of ${exposure:,.0f} - maintain current controls"
 
     def _generate_strategic_recommendations(self, aggregate: Dict, prioritized: List[Dict]) -> List[str]:
         """Generate strategic recommendations for executives"""
+        recommendations = []
+
+        # Add Crisis Response if Critical Findings Exist
+        if aggregate["findings_by_severity"].get("CRITICAL", 0) > 0:
+            recommendations.append(
+                "IMMEDIATE: Form crisis response team for critical findings - 24-48 hour remediation window"
+            )
+
+        # Add Emergency Budget if risk score is High
+        if aggregate["overall_risk_score"] > 60:
+            recommendations.append(
+                "URGENT: Allocate emergency budget for high-priority remediations this quarter"
+            )
+
+        # add automation if too many findings
+        # (manual handling would be too much)
+        if len(prioritized) > 20:
+            recommendations.append(
+                "STRATEGIC: Implement automated compliance monitoring to prevent future violations"
+            )
+
+        # ROI-based recommendation
+        # finds remediations with ROI score > 10
+        # If there are any, it:
+        # - Takes the top five (high_roi[:5]
+        # - Sums their "financial_benefit"
+        # - Appends a recommendation showing the potential dollar value of those fixes.
+        high_roi = [p for p in prioritized if p["roi_score"] > 10]
+        if high_roi:
+            total_benefit = sum(p["financial_benefit"] for p in high_roi[:5])
+            recommendations.append(
+                f"OPPORTUNITY: Top 5 remediations offer ${total_benefit:,.0f} in risk reduction"
+            )
+
+        # Fall back case if no conditions above triggered
+        if not recommendations:
+            recommendations.append(
+                "MAINTAIN: Continue current security practices and schedule quarterly assessments"
+            )
+
+        return recommendations
 
     def _generate_remediation_roadmap(self, prioritized: List[Dict]) -> Dict:
         """Generate phased remediation roadmap"""
+        return {
+            # Phase 1: Immediate
+            # take all remediations that can be fixed within 1 day; take only the top 3
+            "phase_1_immediate": {
+                "timeline": "0-7 days",
+                "items": [p for p in prioritized if p["days_to_remediate"] <= 1][:3],
+                "focus": "Critical security gaps requiring immediate attention"
+            },
+            # Filter items that take between 2-7 days to remediate; cap @ 5 items
+            "phase_2_short_term": {
+                "timeline": "1-4 weeks",
+                "items": [p for p in prioritized if 1 < p["days_to_remediate"] <= 7][:5],
+                "focus": "High-priority issues with strong ROI"
+            },
+            # Filter items that take more than 7 days to remediate; cao @ 5 items
+            "phase_3_quarterly": {
+                "timeline": "1-3 months",
+                "items": [p for p in prioritized if p["days_to_remediate"] > 7][:5],
+                "focus": "Strategic improvements and compliance alignment"
+            }
+        }
 
     def _assess_compliance_status(self, aggregate: Dict) -> Dict:
         """Assess overall compliance status"""
+        # Extract Counts: Looks up how many critical & high severity findings exist
+        critical_count = aggregate["findings_by_severity"].get("CRITICAL", 0)
+        high_count = aggregate["findings_by_severity"].get("HIGH", 0)
+
+        # Compliance Status Rules
+
+        # If there is any critical finding, you are straight up non-compliant
+        if critical_count > 0:
+            status = "NON-COMPLIANT"
+            audit_readiness = "NOT READY - Critical gaps must be addressed"
+        # 5 more high findings? Partially compliant, audit risk
+        elif high_count > 5:
+            status = "PARTIALLY COMPLIANT"
+            audit_readiness = "AT RISK - Significant gaps identified"
+        # if total findings exceed 20, not failing, but improve b4 audit
+        elif aggregate["total_findings"] > 20:
+            status = "NEEDS IMPROVEMENT"
+            audit_readiness = "CONDITIONAL - Minor gaps to address"
+        # substantially compliant/audit ready if none of the above gets triggered
+        else:
+            status = "SUBSTANTIALLY COMPLIANT"
+            audit_readiness = "AUDIT READY - Minor findings only"
+
+        # Return Compliance Report
+        return {
+            "status": status,
+            "audit_readiness": audit_readiness,
+            "next_audit_recommendation": self._recommend_audit_timing(aggregate)
+        }
 
     def _recommend_audit_timing(self, aggregate: Dict) -> str:
         """Recommend when to schedule next audit"""
+        if aggregate["overall_risk_score"] > 70:
+            return "Delay audit 3-6 months until critical issues resolved"
+        elif aggregate["overall_risk_score"] > 50:
+            return "Schedule audit in 2-3 months after remediation"
+        else:
+            return "Ready for audit - schedule at convenience"
 
     def export_executive_report(self, output_file: str):
         """Export executive report as Markdown"""
+        # Generate Summary
+        summary = self.generate_executive_summary()
 
-        # holy shit LOL
+        # Prepare the output path
+        # Path(output_file) -> turns the string into a Path Object thanks to pathlib
+        output_path = Path(output_file)
+
+        # makes sure the folder, where the file will go, exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write JSON file
+        # Writes the summary dict as nicely printed JSON (indent=2 spaces)
+        # If there are non-serializable objects (like datetime) convert them to string
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(summary, f, indent=2, default=str)
+
+        logger.info(f"Executive report exported to {output_file}")
+        return summary
+
+    def export_markdown_report(self, output_file: str):
+        """Export executive report as Markdown"""
+
+        # This will be picked up eventually
+
+        # Takes the executive summary data (which has been already generated elsewhere),
+        # and then writes it into a well-structured Markdown file that looks like a formatted executive report.
+
+        # 1. Setup
+
+        # 2. Report Header
+
+        # 3. Executive Briefing
+
+        # 4. Key Metrics
+
+        # 5. Strategic Recommendations
+
+        # 6. Top 5 Financial Risk
+
+        # 7. Quick Wins
+
+        # 8. Compliance Status
+
+        # 9. Remediation Roadmap
+
+
 
 def main():
     """Main execution function, obviously"""
